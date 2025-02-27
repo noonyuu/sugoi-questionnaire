@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { chromium } from "playwright";
 import { drizzle } from "drizzle-orm/d1";
+import { eq, sql, asc } from "drizzle-orm";
 import { formInfoInsert } from "../../db/db_func/form_info_insert";
 
-import { forms } from "../../db/schema";
+import { forms, questions, options } from "../../db/schema";
 import { extractFormId } from "../../utils/extract-formId";
+import { getFormProvider } from "../../utils/get-form-provider";
 
 type Bindings = {
   DB: D1Database;
@@ -29,10 +31,22 @@ microsoft.post("/", async (c) => {
 
   try {
     // dbからformIDが既に存在するか確認
-    const formExists = await db.select().from(forms).where(url).execute();
+    let formInfoData = await db
+      .select({
+        question: questions.questionText,
+        questionType: questions.questionType,
+        options: sql<string>`JSON_GROUP_ARRAY(${options.optionText} ORDER BY ${options.id} ASC)`.as("options"),
+      })
+      .from(forms)
+      .leftJoin(questions, eq(forms.id, questions.formId))
+      .leftJoin(options, eq(questions.id, options.questionId))
+      .where(eq(forms.formId, formId))
+      .groupBy(questions.id)
+      .orderBy(asc(questions.id))
+      .execute();
 
-    if (formExists.length > 0) {
-      return c.json({ formExists });
+    if (formInfoData.length > 0) {
+      return c.json({ formExists: formInfoData });
     }
 
     const browser = await chromium.launch();
@@ -41,18 +55,32 @@ microsoft.post("/", async (c) => {
 
     // すべての質問IDを取得
     const questionElements = await page.$$('[id^="QuestionId_"]');
-    const questions = [];
+    const questionsList = [];
 
     for (const el of questionElements) {
       const id = await el.getAttribute("id");
-      const text = await page.$eval(`#${id} > div:nth-child(1) > span > span:nth-child(1) > span:nth-child(2)`, (el) => el.textContent?.trim() ?? "");
+      if (!id) {
+        console.error("質問IDが取得できませんでした");
+        continue;
+      }
 
-      questions.push({ id, text });
+      const nameAttribute = id.replace("QuestionId_", "");
+
+      try {
+        const text = await page.$eval(`#${id} > div:nth-child(1) > span > span:nth-child(1) > span:nth-child(2)`, (el) => el.textContent?.trim() ?? "");
+
+        const typeElement = await page.$(`[aria-labelledby="${id} QuestionInfo_${nameAttribute}"]`);
+        const type = typeElement ? (await typeElement.getAttribute("data-automation-id")) || (await typeElement.getAttribute("role")) : "";
+
+        questionsList.push({ id, text, type });
+      } catch (error) {
+        console.error(`質問の取得中にエラーが発生しました: ${error}`);
+      }
     }
 
     // 各質問の選択肢を取得
     const formData = [];
-    for (const question of questions) {
+    for (const question of questionsList) {
       const choices = await page.$$eval(`div[role="radiogroup"][aria-labelledby^="${question.id}"] input[type="radio"]`, (elements) =>
         elements.map((el) => ({
           value: (el as HTMLInputElement).value,
@@ -63,23 +91,57 @@ microsoft.post("/", async (c) => {
       formData.push({
         questionId: question.id,
         questionText: question.text,
+        questionType: question.type,
         choices,
       });
     }
 
     await browser.close();
 
-    const success = await formInfoInsert(db, {
-      url,
-      formId,
-      provider: "microsoft",
-    });
+    const provider: string = getFormProvider(url);
+
+    // questionを生成
+    const question = formData.map((q) => ({
+      questionText: q.questionText,
+      questionType: q.questionType,
+      position: 0, // TODO: 並び順を取得する
+      required: 0, // TODO: 必須かどうかを取得する
+    }));
+
+    const success = await formInfoInsert(
+      db,
+      {
+        url,
+        formId,
+        provider: provider,
+      },
+      question,
+      formData
+    );
 
     if (!success) {
       return c.json({ error: "Failed to insert form" }, 500);
     }
 
-    return c.json({ formData });
+    formInfoData = await db
+      .select({
+        question: questions.questionText,
+        questionType: questions.questionType,
+        options: sql<string>`JSON_GROUP_ARRAY(${options.optionText} ORDER BY ${options.id} ASC)`.as("options"),
+      })
+      .from(forms)
+      .leftJoin(questions, eq(forms.id, questions.formId))
+      .leftJoin(options, eq(questions.id, options.questionId))
+      .where(eq(forms.formId, formId))
+      .groupBy(questions.id)
+      .orderBy(asc(questions.id))
+      .execute();
+
+    if (formInfoData.length > 0) {
+      return c.json({ formExists: formInfoData });
+    }
+
+    return c.json({ error: "Failed to insert form" }, 500);
   } catch (error) {
     console.error("Scraping error:", error);
     return c.json({ error: `Failed to scrape: ${error}` }, 500);
