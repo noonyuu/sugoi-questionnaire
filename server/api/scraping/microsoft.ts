@@ -1,14 +1,40 @@
 import { Hono } from "hono";
 import { chromium } from "playwright";
+import { drizzle } from "drizzle-orm/d1";
+import { formInfoInsert } from "../../db/db_func/form_info_insert";
 
-const microsoft = new Hono();
+import { forms } from "../../db/schema";
+import { extractFormId } from "../../utils/extract-formId";
+
+type Bindings = {
+  DB: D1Database;
+};
+
+const microsoft = new Hono<{ Bindings: Bindings }>();
 
 microsoft.post("/", async (c) => {
+  let db;
+
+  try {
+    db = drizzle(c.env.DB);
+  } catch (error) {
+    console.error("DB error:", error);
+    return c.json({ error: "Failed to connect to database" }, 500);
+  }
+
   const { formUrl } = await c.req.json();
   // formUrlを文字列に変換する
   const url = formUrl.toString();
+  const formId = extractFormId(url) ?? "";
 
   try {
+    // dbからformIDが既に存在するか確認
+    const formExists = await db.select().from(forms).where(url).execute();
+
+    if (formExists.length > 0) {
+      return c.json({ formExists });
+    }
+
     const browser = await chromium.launch();
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: "networkidle" }); // 完全に読み込まれるまで待つ
@@ -42,6 +68,16 @@ microsoft.post("/", async (c) => {
     }
 
     await browser.close();
+
+    const success = await formInfoInsert(db, {
+      url,
+      formId,
+      provider: "microsoft",
+    });
+
+    if (!success) {
+      return c.json({ error: "Failed to insert form" }, 500);
+    }
 
     return c.json({ formData });
   } catch (error) {
