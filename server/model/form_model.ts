@@ -9,18 +9,18 @@ export interface Form {
 
 // 質問のモデル
 export interface Question {
-  id: number;
-  formId: number;
+  id?: number;
+  formId?: number;
   questionText: string;
-  questionType: string;
+  questionType: string | null;
   position: number;
   required: number;
 }
 
 // 選択肢のモデル
 export interface Option {
-  id: number;
-  questionId: number;
+  id?: number;
+  questionId?: number;
   optionText: string;
   position: number;
 }
