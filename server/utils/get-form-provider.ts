@@ -1,4 +1,4 @@
-export const getFormProvider = (url: string): string | null => {
+export const getFormProvider = (url: string): string => {
   if (url.includes("forms.office.com")) {
     return "microsoft";
   } else if (url.includes("docs.google.com/forms")) {
