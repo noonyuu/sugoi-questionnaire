@@ -3,8 +3,10 @@ import { chromium } from "playwright";
 
 const microsoft = new Hono();
 
-microsoft.get("/", async (c) => {
-  const url = "https://forms.office.com/Pages/ResponsePage.aspx?id=qi6vVm7-f0exyJc-kX5OjnJLEew38VVPgTeJag_8BbFUOURCVldTQktGUkNUREo5NDRVOEFLTzFQMy4u";
+microsoft.post("/", async (c) => {
+  const { formUrl } = await c.req.json();
+  // formUrlを文字列に変換する
+  const url = formUrl.toString();
 
   try {
     const browser = await chromium.launch();
