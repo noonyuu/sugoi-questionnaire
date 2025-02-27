@@ -1,15 +1,19 @@
 import { sql } from "drizzle-orm/sql";
-import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, index } from "drizzle-orm/sqlite-core";
 
-export const forms = sqliteTable("forms", {
-  id: integer("id").primaryKey().notNull(),
-  url: text("url").notNull(), // フォームのURL
-  formId: text("form_id").notNull().unique(), // フォームのID
-  provider: text("provider").notNull(), // formの提供元（Google / Microsoft など）
-  createAt: text("create_at")
-    .notNull()
-    .default(sql`(datetime('now', 'localtime'))`),
-});
+export const forms = sqliteTable(
+  "forms",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    url: text("url").notNull(), // フォームのURL
+    formId: text("form_id").notNull().unique(), // フォームのID
+    provider: text("provider").notNull(), // formの提供元（Google / Microsoft など）
+    createAt: text("create_at")
+      .notNull()
+      .default(sql`(datetime('now', 'localtime'))`),
+  },
+  (table) => [index("form_id_index").on(table.formId)]
+);
 
 export const questions = sqliteTable("questions", {
   id: integer("id").primaryKey().notNull(),
