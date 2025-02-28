@@ -26,9 +26,14 @@
     "isbot": "^4.1.0",
     "playwright": "^1.50.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.5.5",
+    "tailwindcss-animate": "^1.0.7",
+    "framer-motion": "^10.16.4",
+    "lucide-react": "^0.294.0"
   },
   "devDependencies": {
+    "@radix-ui/react-slot": "^1.1.1",
     "@cloudflare/workers-types": "^4.20250224.0",
     "@remix-run/dev": "^2.15.3",
     "@types/react": "^18.2.20",
@@ -36,6 +41,7 @@
     "@typescript-eslint/eslint-plugin": "^6.7.4",
     "@typescript-eslint/parser": "^6.7.4",
     "autoprefixer": "^10.4.19",
+    "class-variance-authority": "^0.7.1",
     "drizzle-kit": "^0.30.5",
     "eslint": "^8.38.0",
     "eslint-import-resolver-typescript": "^3.6.1",
