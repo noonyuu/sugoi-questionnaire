@@ -17,6 +17,13 @@ export interface Question {
   required: number;
 }
 
+// 質問の回答のモデル
+export interface Answer {
+  id?: number;
+  questionId: number;
+  answerText: string;
+}
+
 // 選択肢のモデル
 export interface Option {
   id?: number;
