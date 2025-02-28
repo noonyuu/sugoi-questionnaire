@@ -2,7 +2,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { forms, options, questions } from "../schema";
 import { DrizzleD1Database } from "drizzle-orm/d1";
 
-export async function getFormInfo(db: DrizzleD1Database, formId: string) {
+export async function getFormInfo(db: DrizzleD1Database, url: string) {
   return db
     .select({
       question: questions.questionText,
@@ -12,7 +12,7 @@ export async function getFormInfo(db: DrizzleD1Database, formId: string) {
     .from(forms)
     .leftJoin(questions, eq(forms.id, questions.formId))
     .leftJoin(options, eq(questions.id, options.questionId))
-    .where(eq(forms.formId, formId))
+    .where(eq(forms.formId, url))
     .groupBy(questions.id)
     .orderBy(asc(questions.id))
     .execute();
