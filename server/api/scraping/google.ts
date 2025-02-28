@@ -1,67 +1,73 @@
+import { drizzle } from "drizzle-orm/d1";
 import { Hono } from "hono";
-import { chromium } from "playwright";
+import { getFormInfo } from "server/db/db_func/get_form_info";
+import { formInfoInsert } from "server/db/db_func/insert_form_info";
+import { extractFormId } from "server/utils/extract-formId";
+import { getFormProvider } from "~/utils/get-form-provider";
 
-const google = new Hono();
+type Bindings = {
+  DB: D1Database;
+};
 
-google.get("/", async (c) => {
-  const url = "https://docs.google.com/forms/d/e/1FAIpQLSfBR1QRKw2D_cl1RehnHe-LOMwco8CQmpqo_wekM-DRyTlwmg/viewform?usp=preview";
+type ScrapedData = {
+  formData: {
+    questionId: string;
+    questionText: string;
+    questionType: string;
+    choices: {
+      value: string;
+      label: string;
+    }[];
+  }[];
+  question: {
+    questionText: string;
+    questionType: string;
+    position: number;
+    required: number;
+  }[];
+} | null;
 
-  try {
-    const browser = await chromium.launch();
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded" }); // DOMの読み込み完了を待機
+const google = new Hono<{ Bindings: Bindings }>();
 
-    // 質問が含まれるセクションのベースセレクタ
-    const sectionBaseSelector = "/html/body/div/div[2]/form/div[2]/div/div[2]";
-    const questionBoxSelector = "Qr7Oae"; // 質問ボックスのセレクタ(class)
-
-    // 質問ボックスの数を取得
-    const questionBoxCount = await page.$$eval(`.${questionBoxSelector}`, (elements) => elements.length);
-
-    // 質問格納用
-    const questions = [];
-
-    // 質問を取得
-    for (let i = 1; i <= questionBoxCount; i++) {
-      const questionXPath = `${sectionBaseSelector}/div[${i}]/div/div/div[1]/div/div[1]/span[1]`;
-
-      // XPathを使って質問を取得
-      const questionLocator = page.locator(`xpath=${questionXPath}`);
-
-      // 要素がDOMに追加されるのを待機
-      await questionLocator.waitFor({ timeout: 60000, state: "attached" });
-
-      // 質問のテキストを取得
-      const question = await questionLocator.textContent();
-
-      // 回答欄取得
-      const answerBoxXPath = `${sectionBaseSelector}/div[${i}]/div/div/div[2]`;
-
-      // answerBoxXPathに対してlocatorを作成
-      const answerLocator = page.locator(`xpath=${answerBoxXPath}`);
-
-      // answerLocatorからラジオボタン選択肢を取得
-      const choices = await answerLocator.locator('[role="radio"]').evaluateAll((elements) =>
-        elements.map((el) => ({
-          value: el.getAttribute("data-value") || el.getAttribute("aria-label") || "No Label",
-          label: el.getAttribute("aria-label") || el.getAttribute("data-value") || "No Label",
-        }))
-      );
-
-      // 質問と選択肢を格納
-      questions.push({
-        question,
-        choices,
-      });
-    }
-
-    await browser.close();
-
-    return c.json({ questions });
-  } catch (error) {
-    console.error("Scraping error:", error);
-    return c.json({ error: `Failed to scrape: ${error}` }, 500);
+google.post("/", async (c) => {
+  const db = drizzle(c.env.DB);
+  const { formUrl } = await c.req.json();
+  const url = formUrl.toString(); // formUrlを文字列に変換する
+  // すでにDBに登録済みのフォームを取得
+  // TODO: ここめちゃくちゃ
+  const formExists = await getFormInfo(db, url);
+  if (formExists.length > 0) {
+    return c.json({ formExists });
   }
+
+  // スクレイピングサーバーにリクエストを送信
+  const scrapedDataResponse = await fetch(`https://sugoi-scraping.noonyuu.com/${getFormProvider(url)}`,  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ formUrl }),
+  });
+  if (!scrapedDataResponse.ok) {
+    return c.json({ error: "Failed to scrape form" }, 500);
+  }
+
+  const scrapedData: ScrapedData = await scrapedDataResponse.json();
+
+  if (!scrapedData) {
+    return c.json({ error: "No data received from scraper" }, 500);
+  }
+
+  const { formData, question } = scrapedData;
+  console.log("formData", formData);
+  console.log("question", question);
+  const success = await formInfoInsert(db, { url, formId: extractFormId(url)!, provider: "google" }, question, formData);
+
+  if (!success) {
+    return c.json({ error: "Failed to insert form" }, 500);
+  }
+
+  // 挿入後のデータを再取得
+  const updatedFormInfo = await getFormInfo(db, extractFormId(url)!);
+  return updatedFormInfo.length > 0 ? c.json({ formExists: updatedFormInfo }) : c.json({ error: "Failed to retrieve form data" }, 500);
 });
 
 export default google;
