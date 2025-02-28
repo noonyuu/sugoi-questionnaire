@@ -3,7 +3,7 @@
 # https://developers.cloudflare.com/workers/wrangler/configuration/
 name = "sugoi-questionnaire"
 compatibility_date = "2025-02-24"
-main = "./server.ts"
+main = "./server/index.ts"
 
 [assets]
 directory = "./build/client"
@@ -42,3 +42,4 @@ enabled = true
 # [[services]]
 # binding = "MY_SERVICE"
 # service = "my-service"
+
